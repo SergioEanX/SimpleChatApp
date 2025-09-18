@@ -1,0 +1,20 @@
+[project]
+name = "simplechatapp"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.116.2",
+    "fastparquet>=2024.11.0",
+    "guardrails-ai>=0.5.15",
+    "langchain-community>=0.3.29",
+    "langchain-core>=0.3.76",
+    "langchain-ollama>=0.3.8",
+    "motor>=3.7.1",
+    "pandas>=2.3.2",
+    "pandas-stubs==2.3.2.250827",
+    "pymongo>=4.15.1",
+    "python-dotenv>=1.1.1",
+    "spacy>=3.8.7",
+    "uvicorn>=0.35.0",
+]

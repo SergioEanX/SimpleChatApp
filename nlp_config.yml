@@ -1,0 +1,22 @@
+nlp_engine_name: spacy
+models:
+  - lang_code: en
+    model_name: en_core_web_lg
+  - lang_code: it
+    model_name: it_core_news_lg
+
+# Evitiamo i warning definendo i campi mancanti:
+model_to_presidio_entity_mapping:
+  PERSON: PERSON
+  ORG: ORGANIZATION
+  GPE: LOCATION
+  LOC: LOCATION
+  DATE: DATE_TIME
+  EMAIL: EMAIL_ADDRESS
+
+low_score_entity_names: []
+
+labels_to_ignore: []
+
+# Aggiungiamo la sezione mancante per zittire il warning
+ner_model_configuration: {}
