@@ -244,7 +244,7 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
             # Validazione contenuto
             try:
                 outcome = self.input_guard.validate(user_query)
-                validated_query = outcome.valid_output
+                validated_query = outcome.validated_output
 
                 # Se il guard ha modificato il contenuto (es. filtrato profanità)
                 if validated_query != user_query:
@@ -294,7 +294,7 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                     try:
                         # validated_content = self.conversation_guard.validate(content_to_validate)
                         outcome = self.conversation_guard.validate(content_to_validate)
-                        validated_content = outcome.valid_output
+                        validated_content = outcome.validated_output
 
                         # Se modificato, aggiorna response
                         if validated_content != content_to_validate:
