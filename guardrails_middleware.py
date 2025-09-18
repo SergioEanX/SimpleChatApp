@@ -16,6 +16,7 @@ from typing import Dict, Any, Optional, List
 
 from presidio_analyzer import RecognizerRegistry, AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
+from presidio_analyzer.recognizer_registry import RecognizerRegistryProvider
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Guardrails imports
@@ -37,39 +38,48 @@ try:
     _nlp_provider = NlpEngineProvider(conf_file=CONFIG_FILE)
     _nlp_engine = _nlp_provider.create_engine()
     
-    # Create registry with explicit supported languages
-    _registry = RecognizerRegistry()
-    # Force the registry to support both EN and IT before loading recognizers
-    _registry._supported_languages = {"en", "it"}
+    # Use RecognizerRegistryProvider for proper multi-language support
+    _registry_provider = RecognizerRegistryProvider()
+    _registry = _registry_provider.create_recognizer_registry()
+    
+    # Load recognizers for both languages using the NLP engine
     _registry.load_predefined_recognizers(languages=["en", "it"], nlp_engine=_nlp_engine)
     
-    # Use the languages that we explicitly set and that have models available
+    # Create AnalyzerEngine with languages that match the registry
     analyzer_engine = AnalyzerEngine(
         nlp_engine=_nlp_engine,
         registry=_registry,
-        supported_languages=["en", "it"],
+        supported_languages=list(_registry.supported_languages),
     )
-    logger.info("AnalyzerEngine inizializzato da nlp_config.yml con supporto EN+IT")
+    logger.info(f"AnalyzerEngine inizializzato da nlp_config.yml con supporto {list(_registry.supported_languages)}")
 except Exception as _e:
     logger.error(f"Errore inizializzazione AnalyzerEngine da nlp_config.yml: {_e}")
     # Fallback: crea engine minimo EN+IT se possibile, altrimenti EN only
     try:
         _fallback_provider = NlpEngineProvider()
         _fallback_nlp = _fallback_provider.create_engine()
-        _fallback_reg = RecognizerRegistry()
+        _fallback_reg_provider = RecognizerRegistryProvider()
+        _fallback_reg = _fallback_reg_provider.create_recognizer_registry()
+        
         # Try to create EN+IT fallback first
         try:
-            _fallback_reg._supported_languages = {"en", "it"}
             _fallback_reg.load_predefined_recognizers(languages=["en", "it"], nlp_engine=_fallback_nlp)
-            analyzer_engine = AnalyzerEngine(nlp_engine=_fallback_nlp, registry=_fallback_reg, supported_languages=["en", "it"])
-            logger.warning("AnalyzerEngine fallback creato con supporto EN+IT")
+            analyzer_engine = AnalyzerEngine(
+                nlp_engine=_fallback_nlp, 
+                registry=_fallback_reg, 
+                supported_languages=list(_fallback_reg.supported_languages)
+            )
+            logger.warning(f"AnalyzerEngine fallback creato con supporto {list(_fallback_reg.supported_languages)}")
         except Exception:
             # Final fallback: EN only
-            _fallback_reg = RecognizerRegistry()
-            _fallback_reg._supported_languages = {"en"}
-            _fallback_reg.load_predefined_recognizers(languages=["en"], nlp_engine=_fallback_nlp)
-            analyzer_engine = AnalyzerEngine(nlp_engine=_fallback_nlp, registry=_fallback_reg, supported_languages=["en"])
-            logger.warning("AnalyzerEngine fallback creato (EN only)")
+            _final_fallback_reg = _fallback_reg_provider.create_recognizer_registry()
+            _final_fallback_reg.load_predefined_recognizers(languages=["en"], nlp_engine=_fallback_nlp)
+            analyzer_engine = AnalyzerEngine(
+                nlp_engine=_fallback_nlp, 
+                registry=_final_fallback_reg, 
+                supported_languages=list(_final_fallback_reg.supported_languages)
+            )
+            logger.warning(f"AnalyzerEngine fallback creato {list(_final_fallback_reg.supported_languages)}")
     except Exception as __e:
         logger.error(f"Fallback AnalyzerEngine creation failed: {__e}")
         analyzer_engine = None
@@ -111,12 +121,16 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
             try:
                 _provider = NlpEngineProvider(conf_file=CONFIG_FILE)
                 _nlp = _provider.create_engine()
-                _reg = RecognizerRegistry()
-                # Force registry to support EN and IT explicitly
-                _reg._supported_languages = {"en", "it"}
+                _reg_provider = RecognizerRegistryProvider()
+                _reg = _reg_provider.create_recognizer_registry()
+                # Load recognizers using proper API
                 _reg.load_predefined_recognizers(languages=["en", "it"], nlp_engine=_nlp)
-                analyzer_engine = AnalyzerEngine(nlp_engine=_nlp, registry=_reg, supported_languages=["en", "it"])
-                logger.info("AnalyzerEngine creato in fallback del middleware con supporto EN+IT")
+                analyzer_engine = AnalyzerEngine(
+                    nlp_engine=_nlp, 
+                    registry=_reg, 
+                    supported_languages=list(_reg.supported_languages)
+                )
+                logger.info(f"AnalyzerEngine creato in fallback del middleware con supporto {list(_reg.supported_languages)}")
             except Exception as e:
                 logger.error(f"Impossibile inizializzare AnalyzerEngine: {e}")
                 analyzer_engine = None
