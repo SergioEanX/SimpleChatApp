@@ -24,7 +24,7 @@ from database import MongoDBService
 from langchain_service import ConversationalLangChainService
 
 # Guardrails integration
-from guardrails_middleware import GuardrailsMiddleware, create_guardrails_config, setup_custom_validators
+from guardrails_middleware import GuardrailsMiddleware, create_guardrails_config
 
 from guardrails_middleware import analyzer_engine
 from presidio_analyzer import AnalyzerEngine
@@ -76,9 +76,6 @@ async def lifespan(app: FastAPI):
     global mongodb_service, conversational_service
 
     try:
-        # Setup custom validators Guardrails
-        custom_validators = setup_custom_validators()
-        print(f"🔧 Configurati {len(custom_validators)} custom validators")
 
         # MongoDB Service
         print("📊 Connessione MongoDB...")
@@ -163,7 +160,7 @@ if __name__ == "__main__":
             "main:app",
             host="0.0.0.0",
             port=8000,
-            reload=False,
+            reload=True,
             log_level="info",
             lifespan="on",
         )
