@@ -7,16 +7,13 @@ import asyncio
 import json
 import logging
 import httpx
-from typing import Optional, List, cast, Callable, Any
-from guardrails import register_validator, OnFailAction
+from typing import Optional, List
+from guardrails import register_validator
 from guardrails.validator_base import Validator
 from guardrails.errors import ValidationError
 from guardrails import Guard
 
 logger = logging.getLogger(__name__)
-
-on_fail_exc = cast(Callable[..., Any], OnFailAction.EXCEPTION)
-on_fail_filter = cast(Callable[..., Any], OnFailAction.FILTER)
 
 @register_validator("custom/llm_topic", data_type="string")
 class LLMTopicValidator(Validator):
@@ -28,7 +25,7 @@ class LLMTopicValidator(Validator):
         ollama_url: str = "http://localhost:11434",
         model: str = "gemma3:latest",
         timeout: float = 5.0,
-        on_fail: OnFailAction = on_fail_exc
+        on_fail: str = "exception"
     ):
         super().__init__(on_fail=on_fail)
         self.blocked_topics = blocked_topics or [
@@ -131,17 +128,8 @@ Rispondi SOLO con: CONSENTITO oppure VIETATO"""
         
         # Use LLM for semantic classification
         try:
-            # Better async context handling
-            try:
-                # Try to use existing event loop
-                loop = asyncio.get_running_loop()
-                # We're in async context, create task
-                task = asyncio.create_task(self._classify_with_llm(value))
-                # This will work if called from async context
-                is_allowed = loop.run_until_complete(task)
-            except RuntimeError:
-                # No running loop, create new one
-                is_allowed = asyncio.run(self._classify_with_llm(value))
+            # Simplified async handling - use asyncio.run directly
+            is_allowed = asyncio.run(self._classify_with_llm(value))
             
             if not is_allowed:
                 blocked_topics_str = ", ".join(self.blocked_topics)
@@ -155,7 +143,10 @@ Rispondi SOLO con: CONSENTITO oppure VIETATO"""
         except ValidationError:
             raise  # Re-raise validation errors
         except Exception as e:
-            logger.error(f"Topic validation error: {e}")
+            logger.warning(f"Topic validation technical error: {e}")
+            # Log the full traceback for debugging
+            import traceback
+            logger.debug(f"Topic validation traceback: {traceback.format_exc()}")
             return value  # Fail-open on technical errors
     
     def _quick_keyword_check(self, text: str) -> Optional[str]:
@@ -171,7 +162,8 @@ Rispondi SOLO con: CONSENTITO oppure VIETATO"""
             ("cosa consigli per", "consigli medici"),  # Added this
             ("mi consigli per", "consigli medici"),   # Added this
             ("rimedio per", "consigli medici"),       # Added this
-            ("cura per", "consigli medici")           # Added this
+            ("cura per", "consigli medici"),          # Added this
+            ("suggerisci", "consigli medici")         # Added this
         ]
         
         # Political opinion patterns  
@@ -202,18 +194,22 @@ Rispondi SOLO con: CONSENTITO oppure VIETATO"""
 
 
 def add_topic_restriction(config: dict) -> Guard:
-    """Add LLM-based topic restriction to guard"""
+    """Add topic restriction to guard - ultra simple version"""
     try:
-        # Get Ollama configuration from environment or defaults
-        ollama_config = {
-            "ollama_url": config.get("ollama_url", "http://localhost:11434"),
-            "model": config.get("ollama_model", "gemma2:2b"),
-            "timeout": config.get("llm_timeout", 5.0)
-        }
+        # Use ultra simple validator following exact docs pattern
+        from .ultra_simple import UltraSimpleTopicValidator
         
-        validator = LLMTopicValidator(**ollama_config)
-        return Guard().use(validator)
+        logger.info("🔧 Creating UltraSimpleTopicValidator...")
+        validator = UltraSimpleTopicValidator(on_fail="exception")
+        logger.info(f"🔧 Created validator: {type(validator).__name__}")
+        
+        guard = Guard().use(validator)
+        logger.info(f"🔧 Guard created with {len(guard.validators)} validators")
+        logger.info("Using ultra simple topic validator (exact docs pattern)")
+        return guard
         
     except Exception as e:
-        logger.warning(f"Topic validator creation failed: {e}")
+        logger.error(f"Ultra simple topic validator failed: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return Guard()  # Empty guard as fallback

@@ -5,6 +5,9 @@ DEFAULT_CONFIG = {
     "toxic_threshold": 0.8,
     "profanity_filter": True,
     "enable_topic_restriction": True,  # Set True to enable LLM topic filtering
+    "use_llm_topic": False,            # Set False to use simple keyword-based (for debugging)
+    "enable_pii_detection": True,     # Set True to enable PII detection
+    "use_italian_pii": True,          # Use custom Italian PII validator
     
     # Ollama LLM configuration for topic classification
     "ollama_url": "http://localhost:11434",
@@ -15,7 +18,7 @@ DEFAULT_CONFIG = {
         "toxic": "Non posso elaborare contenuti inappropriati. Ti prego di riformulare.",
         "profanity": "Linguaggio inappropriato rimosso dalla richiesta.",
         "topic": "Sono un sistema AI per database analytics. Non posso fornire consigli personali.",
-        "pii": "Dati personali rilevati. Richiesta bloccata per sicurezza."
+        "pii": "Ho rilevato dati personali sensibili nella tua richiesta (nomi, email, codici fiscali, ecc.). Per motivi di sicurezza e privacy, non posso elaborare informazioni personali identificabili."
     }
 }
 

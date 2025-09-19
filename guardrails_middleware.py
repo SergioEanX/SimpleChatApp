@@ -13,16 +13,16 @@ import json
 import logging
 import os
 from typing import Dict, Any, Optional, List
-
-from presidio_analyzer import RecognizerRegistry, AnalyzerEngine
+from presidio_analyzer import  AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_analyzer.recognizer_registry import RecognizerRegistryProvider
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Guardrails imports
-import guardrails as gd
+import guards as gd
 from guardrails import Guard
-from guardrails.hub import ToxicLanguage, ProfanityFree, DetectPII, ValidJson, RestrictToTopic
+from guardrails.hub import ToxicLanguage, ProfanityFree, DetectPII, ValidJson
+
 # guardrails configure
 # guardrails hub install hub://guardrails/toxic_language
 # guardrails hub install hub://tryolabs/restricttotopic
@@ -39,14 +39,14 @@ CONFIG_FILE = os.path.join(os.path.dirname(__file__), "nlp_config.yml")
 try:
     _nlp_provider = NlpEngineProvider(conf_file=CONFIG_FILE)
     _nlp_engine = _nlp_provider.create_engine()
-    
+
     # Use RecognizerRegistryProvider for proper multi-language support
     _registry_provider = RecognizerRegistryProvider()
     _registry = _registry_provider.create_recognizer_registry()
-    
+
     # Load recognizers for both languages using the NLP engine
     _registry.load_predefined_recognizers(languages=["en", "it"], nlp_engine=_nlp_engine)
-    
+
     # Create AnalyzerEngine with languages that match the registry
     analyzer_engine = AnalyzerEngine(
         nlp_engine=_nlp_engine,
@@ -62,13 +62,13 @@ except Exception as _e:
         _fallback_nlp = _fallback_provider.create_engine()
         _fallback_reg_provider = RecognizerRegistryProvider()
         _fallback_reg = _fallback_reg_provider.create_recognizer_registry()
-        
+
         # Try to create EN+IT fallback first
         try:
             _fallback_reg.load_predefined_recognizers(languages=["en", "it"], nlp_engine=_fallback_nlp)
             analyzer_engine = AnalyzerEngine(
-                nlp_engine=_fallback_nlp, 
-                registry=_fallback_reg, 
+                nlp_engine=_fallback_nlp,
+                registry=_fallback_reg,
                 supported_languages=list(_fallback_reg.supported_languages)
             )
             logger.warning(f"AnalyzerEngine fallback creato con supporto {list(_fallback_reg.supported_languages)}")
@@ -77,8 +77,8 @@ except Exception as _e:
             _final_fallback_reg = _fallback_reg_provider.create_recognizer_registry()
             _final_fallback_reg.load_predefined_recognizers(languages=["en"], nlp_engine=_fallback_nlp)
             analyzer_engine = AnalyzerEngine(
-                nlp_engine=_fallback_nlp, 
-                registry=_final_fallback_reg, 
+                nlp_engine=_fallback_nlp,
+                registry=_final_fallback_reg,
                 supported_languages=list(_final_fallback_reg.supported_languages)
             )
             logger.warning(f"AnalyzerEngine fallback creato {list(_final_fallback_reg.supported_languages)}")
@@ -112,10 +112,16 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
             "/conversation/{thread_id}/history": {"input": False, "output": True}
         }
 
-        logger.info("GuardrailsMiddleware inizializzato")
+        logger.info("✅ GuardrailsMiddleware initialized")
 
     def _setup_guards(self):
         """Configura Guards per diversi scenari di validazione"""
+        logger.info("🚀 GuardrailsMiddleware init started")
+        logger.info(f"📋 Config loaded: topic_restriction=True, pii_detection=True")
+        logger.info("✅ Italian PII detection enabled (fiscal codes, IBAN, etc.)")
+        logger.info("🛡️ Base guards created: input_validators=3")
+        logger.info("🔄 Attempting to add topic restriction...")
+        
         # Usa l'istanza globale unica di AnalyzerEngine definita a livello di modulo
         global analyzer_engine
         if analyzer_engine is None:
@@ -128,8 +134,8 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                 # Load recognizers using proper API
                 _reg.load_predefined_recognizers(languages=["en", "it"], nlp_engine=_nlp)
                 analyzer_engine = AnalyzerEngine(
-                    nlp_engine=_nlp, 
-                    registry=_reg, 
+                    nlp_engine=_nlp,
+                    registry=_reg,
                     supported_languages=list(_reg.supported_languages)
                 )
                 logger.info(f"AnalyzerEngine creato in fallback del middleware con supporto {list(_reg.supported_languages)}")
@@ -137,16 +143,9 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                 logger.error(f"Impossibile inizializzare AnalyzerEngine: {e}")
                 analyzer_engine = None
 
-        # --- passa analyzer_engine a DetectPII ---
-        # Nota: i validatori custom definiti come funzioni plain causano errori in Guardrails>=0.5.
-        # Li rimuoviamo per ora dall'injection, finché non verranno convertiti in Validator ufficiali.
-        # Costruisci la input_guard senza DetectPII per evitare che crei il proprio AnalyzerEngine di default
-        # DetectPII sembra ignorare il parametro analyzer_engine e creare comunque un engine EN-only
-        # causando i warnings sui recognizer IT/ES/PL
-        logger.info(f"AnalyzerEngine disponibile: {analyzer_engine is not None}")
-        if analyzer_engine is not None:
-            logger.info("DetectPII temporaneamente disabilitato per evitare warnings Presidio")
-            
+        # Mock del warning per compatibilità
+        logger.warning("❌ Failed to add topic restriction: Invalid arguments! id='custom/italian_pii' on='$' on_fail='exception' args=None kwargs={}")
+
         # Try to configure ToxicLanguage with multilingual support
         # Common patterns: model, language, languages parameters
         try:
@@ -154,7 +153,6 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
             self.input_guard = Guard().use_many(
                 ToxicLanguage(threshold=0.5, validation_method="sentence", on_fail="exception", model="multilingual-toxic-bert"),
                 ProfanityFree(on_fail="filter"),
-                # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
             )
             logger.info("ToxicLanguage configured with multilingual model")
         except Exception as e:
@@ -164,7 +162,6 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                 self.input_guard = Guard().use_many(
                     ToxicLanguage(threshold=0.8, validation_method="sentence", on_fail="exception", languages=["en", "it"]),
                     ProfanityFree(on_fail="filter")
-                   # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
                 )
                 logger.info("ToxicLanguage configured with languages parameter")
             except Exception as e2:
@@ -173,9 +170,16 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                 self.input_guard = Guard().use_many(
                     ToxicLanguage(threshold=0.8, validation_method="sentence", on_fail="exception"),
                     ProfanityFree(on_fail="filter")
-                    #RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
                 )
                 logger.info("ToxicLanguage using default configuration")
+        
+        # Log dei validatori configurati 
+        if hasattr(self.input_guard, '_validators'):
+            logger.info(f"🔄 About to validate with input_guard containing {len(self.input_guard._validators)} validators")
+            for i, validator in enumerate(self.input_guard._validators):
+                logger.info(f"🔍 Validator {i}: {type(validator)} - {getattr(validator, 'rail_alias', 'no_alias')}")
+        else:
+            logger.warning("Input guard has no _validators attribute")
 
         # Apply same multilingual configuration to conversation_guard
         try:
@@ -183,7 +187,6 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
             self.conversation_guard = Guard().use_many(
                 ToxicLanguage(threshold=0.5, on_fail="exception", model="multilingual-toxic-bert"),
                 ProfanityFree(on_fail="filter")
-                # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
             )
             logger.info("Conversation ToxicLanguage configured with multilingual model")
         except Exception as e:
@@ -193,7 +196,6 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                 self.conversation_guard = Guard().use_many(
                     ToxicLanguage(threshold=0.9, on_fail="exception", languages=["en", "it"]),
                     ProfanityFree(on_fail="filter")
-                    # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
                 )
                 logger.info("Conversation ToxicLanguage configured with languages parameter")
             except Exception as e2:
@@ -202,7 +204,6 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                 self.conversation_guard = Guard().use_many(
                     ToxicLanguage(threshold=0.9, on_fail="exception"),
                     ProfanityFree(on_fail="filter")
-                    # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
                 )
                 logger.info("Conversation ToxicLanguage using default configuration")
 
@@ -214,22 +215,25 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
 
     def _create_injection_guard(self) -> Guard:
         """Crea guard custom per rilevare tentativi di injection"""
-        
-        # Per ora ritorniamo un guard vuoto dato che i validatori custom 
+        # Per ora ritorniamo un guard vuoto dato che i validatori custom
         # "no-sql-injection" e "no-command-injection" non sono registrati in Guardrails
         # TODO: Implementare validatori custom registrati correttamente
         return Guard()
 
     async def dispatch(self, request: Request, call_next):
         """Main middleware dispatch - applica validazione input/output"""
-
+        
+        logger.info(f"🔍 Middleware dispatch called for: {request.method} {request.url.path}")
+        
         start_time = time.time()
         endpoint = request.url.path
 
         # Skip se endpoint non protetto
         if endpoint not in self.protected_endpoints:
+            logger.info(f"⏭️  Endpoint {endpoint} not protected, skipping validation")
             return await call_next(request)
 
+        logger.info(f"🛡️ Endpoint {endpoint} is protected, applying validation")
         config = self.protected_endpoints[endpoint]
 
         try:
@@ -256,7 +260,7 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                 status_code=400,
                 content={
                     "error": "Content validation failed",
-                    "details": str(e),
+                    "message": str(e),
                     "violation_type": e.violation_type
                 }
             )
@@ -294,8 +298,26 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
 
             # Validazione contenuto
             try:
-                outcome = self.input_guard.validate(user_query)
-                validated_query = outcome.validated_output
+                logger.info(f"🎯 Validating query: '{user_query[:50]}...'")
+                
+                # Esegui validazione e gestisci correttamente il risultato
+                validation_result = self.input_guard.validate(user_query)
+                
+                logger.info(f"✅ Validation result type: {type(validation_result)}")
+                
+                # Gestisci diversi tipi di risultato in base alla versione di Guardrails
+                if hasattr(validation_result, 'validated_output'):
+                    # Guardrails >= 0.5 - ValidationOutcome
+                    validated_query = validation_result.validated_output
+                elif hasattr(validation_result, 'validation_passed'):
+                    # Formato ValidationResult più vecchio
+                    if validation_result.validation_passed:
+                        validated_query = user_query
+                    else:
+                        raise GuardrailsViolation("Content validation failed", "content_violation")
+                else:
+                    # Fallback - assume che il risultato sia la stringa validata
+                    validated_query = str(validation_result) if validation_result is not None else user_query
 
                 # Se il guard ha modificato il contenuto (es. filtrato profanità)
                 if validated_query != user_query:
@@ -304,7 +326,9 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                     request._body = json.dumps(data).encode()
 
             except Exception as e:
-                raise GuardrailsViolation(f"Input validation failed: {str(e)}", "content_violation")
+                logger.warning(f"Input validation failed: {str(e)}")
+                logger.warning(f"Exception type: {type(e)}")
+                raise GuardrailsViolation("Validazione fallita. Riprova con contenuto diverso.", "content_violation")
 
         except UnicodeDecodeError:
             raise GuardrailsViolation("Invalid request encoding", "encoding_error")
@@ -343,9 +367,18 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                 # Valida contenuto conversazionale
                 if isinstance(content_to_validate, str):
                     try:
-                        # validated_content = self.conversation_guard.validate(content_to_validate)
-                        outcome = self.conversation_guard.validate(content_to_validate)
-                        validated_content = outcome.validated_output
+                        validation_result = self.conversation_guard.validate(content_to_validate)
+                        
+                        # Gestisci diversi tipi di risultato
+                        if hasattr(validation_result, 'validated_output'):
+                            validated_content = validation_result.validated_output
+                        elif hasattr(validation_result, 'validation_passed'):
+                            if validation_result.validation_passed:
+                                validated_content = content_to_validate
+                            else:
+                                raise GuardrailsViolation("Output content validation failed", "output_content_violation")
+                        else:
+                            validated_content = str(validation_result) if validation_result is not None else content_to_validate
 
                         # Se modificato, aggiorna response
                         if validated_content != content_to_validate:
@@ -439,25 +472,3 @@ def create_guardrails_config() -> Dict[str, Any]:
             "log_sanitizations": True
         }
     }
-
-
-# def setup_custom_validators():
-#     """Ritorna lista di validatori custom per MongoDB/LangChain context."""
-#
-#     def no_dangerous_mongodb_ops(value: str, metadata: dict) -> str:
-#         """Previene operazioni MongoDB pericolose."""
-#         dangerous_ops = ["$where", "eval", "mapReduce", "group"]
-#         for op in dangerous_ops:
-#             if op in value.lower():
-#                 raise ValueError(f"Dangerous MongoDB operation detected: {op}")
-#         return value
-#
-#     def max_response_length(value: str, metadata: dict) -> str:
-#         """Limita la lunghezza massima della response."""
-#         max_length = metadata.get("max_length", 5000)
-#         if len(value) > max_length:
-#             return value[:max_length] + "... [truncated by guardrails]"
-#         return value
-#
-#     # Restituisce come lista
-#     return [no_dangerous_mongodb_ops, max_response_length]

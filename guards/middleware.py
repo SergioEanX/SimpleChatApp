@@ -13,11 +13,11 @@ from typing import Optional, Callable, Awaitable, AsyncGenerator
 
 from guardrails import Guard
 
-from guards.config import load_config, PROTECTED_ENDPOINTS
-from guards.validators import create_input_guard, create_output_guard
-from guards.custom import add_topic_restriction
-from guards.messages import get_violation_message, create_response_body
-from guards.utils import extract_query_from_request, extract_content_from_response, should_validate_input
+from .config import load_config, PROTECTED_ENDPOINTS
+from .validators import create_input_guard, create_output_guard
+from .custom import add_topic_restriction
+from .messages import get_violation_message, create_response_body
+from .utils import extract_query_from_request, extract_content_from_response, should_validate_input
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +26,15 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app):
         super().__init__(app)
+        logger.info("🚀 GuardrailsMiddleware __init__ started")
+        
         self.config = load_config()
+        logger.info(f"📋 Config loaded: topic_restriction={self.config.get('enable_topic_restriction')}, pii_detection={self.config.get('enable_pii_detection')}")
         
         # Create base guards
         self.input_guard = create_input_guard(self.config)
         self.output_guard = create_output_guard(self.config)
+        logger.info(f"🛡️ Base guards created: input_validators={len(self.input_guard.validators) if hasattr(self.input_guard, 'validators') else 0}")
         
         # Add topic restriction if enabled
         if self.config.get("enable_topic_restriction", False):
@@ -54,9 +58,14 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         """Main dispatch with improved error handling"""
         
+        logger.info(f"🔍 Middleware dispatch called for: {request.method} {request.url.path}")
+        
         # Skip non-protected endpoints
         if not self._is_protected_endpoint(request.url.path):
+            logger.info(f"⚡ Endpoint {request.url.path} not protected, skipping validation")
             return await call_next(request)
+        
+        logger.info(f"🛡️ Endpoint {request.url.path} is protected, applying validation")
 
         try:
             # Input validation
@@ -122,7 +131,13 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
 
             # Apply guards validation
             try:
+                logger.info(f"🔄 About to validate with input_guard containing {len(self.input_guard.validators)} validators")
+                for i, validator in enumerate(self.input_guard.validators):
+                    logger.info(f"🔍 Validator {i}: {type(validator).__name__} - {getattr(validator, 'rail_alias', 'no_alias')}")
+                
+                logger.info(f"🎯 Validating query: '{query[:50]}...'")
                 outcome = self.input_guard.validate(query)
+                logger.info(f"✅ Validation completed successfully")
                 
                 # Check if content was modified (sanitized)
                 if outcome.validated_output != query:
