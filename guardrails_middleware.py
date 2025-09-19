@@ -22,10 +22,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 # Guardrails imports
 import guardrails as gd
 from guardrails import Guard
-from guardrails.hub import ToxicLanguage, ProfanityFree, DetectPII, ValidJson
+from guardrails.hub import ToxicLanguage, ProfanityFree, DetectPII, ValidJson, RestrictToTopic
 # guardrails configure
 # guardrails hub install hub://guardrails/toxic_language
+# guardrails hub install hub://tryolabs/restricttotopic
 # https://hub.guardrailsai.com/
+# Note: RestrictToTopic requires OPENAI_API_KEY environment variable to be set
 
 
 logger = logging.getLogger(__name__)
@@ -145,15 +147,64 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
         if analyzer_engine is not None:
             logger.info("DetectPII temporaneamente disabilitato per evitare warnings Presidio")
             
-        self.input_guard = Guard().use_many(
-            ToxicLanguage(threshold=0.8, validation_method="sentence", on_fail="exception"),
-            ProfanityFree(on_fail="filter"),
-        )
+        # Try to configure ToxicLanguage with multilingual support
+        # Common patterns: model, language, languages parameters
+        try:
+            # Attempt multilingual toxicity detection
+            self.input_guard = Guard().use_many(
+                ToxicLanguage(threshold=0.5, validation_method="sentence", on_fail="exception", model="multilingual-toxic-bert"),
+                ProfanityFree(on_fail="filter"),
+                # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
+            )
+            logger.info("ToxicLanguage configured with multilingual model")
+        except Exception as e:
+            logger.warning(f"Multilingual ToxicLanguage failed, trying default: {e}")
+            try:
+                # Try with language parameter
+                self.input_guard = Guard().use_many(
+                    ToxicLanguage(threshold=0.8, validation_method="sentence", on_fail="exception", languages=["en", "it"]),
+                    ProfanityFree(on_fail="filter")
+                   # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
+                )
+                logger.info("ToxicLanguage configured with languages parameter")
+            except Exception as e2:
+                logger.warning(f"Languages parameter failed, using default: {e2}")
+                # Fallback to original configuration
+                self.input_guard = Guard().use_many(
+                    ToxicLanguage(threshold=0.8, validation_method="sentence", on_fail="exception"),
+                    ProfanityFree(on_fail="filter")
+                    #RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
+                )
+                logger.info("ToxicLanguage using default configuration")
 
-        self.conversation_guard = Guard().use_many(
-            ToxicLanguage(threshold=0.9, on_fail="exception"),
-            ProfanityFree(on_fail="filter"),
-        )
+        # Apply same multilingual configuration to conversation_guard
+        try:
+            # Attempt multilingual toxicity detection for conversations
+            self.conversation_guard = Guard().use_many(
+                ToxicLanguage(threshold=0.5, on_fail="exception", model="multilingual-toxic-bert"),
+                ProfanityFree(on_fail="filter")
+                # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
+            )
+            logger.info("Conversation ToxicLanguage configured with multilingual model")
+        except Exception as e:
+            logger.warning(f"Multilingual conversation ToxicLanguage failed, trying default: {e}")
+            try:
+                # Try with language parameter
+                self.conversation_guard = Guard().use_many(
+                    ToxicLanguage(threshold=0.9, on_fail="exception", languages=["en", "it"]),
+                    ProfanityFree(on_fail="filter")
+                    # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
+                )
+                logger.info("Conversation ToxicLanguage configured with languages parameter")
+            except Exception as e2:
+                logger.warning(f"Conversation languages parameter failed, using default: {e2}")
+                # Fallback to original configuration
+                self.conversation_guard = Guard().use_many(
+                    ToxicLanguage(threshold=0.9, on_fail="exception"),
+                    ProfanityFree(on_fail="filter")
+                    # RestrictToTopic(valid_topics=["technology", "programming", "database", "analytics", "data analysis", "mongodb", "chat", "conversation"], on_fail="exception"),
+                )
+                logger.info("Conversation ToxicLanguage using default configuration")
 
         self.json_guard = Guard().use(
             ValidJson(on_fail="reask")
@@ -390,23 +441,23 @@ def create_guardrails_config() -> Dict[str, Any]:
     }
 
 
-def setup_custom_validators():
-    """Ritorna lista di validatori custom per MongoDB/LangChain context."""
-
-    def no_dangerous_mongodb_ops(value: str, metadata: dict) -> str:
-        """Previene operazioni MongoDB pericolose."""
-        dangerous_ops = ["$where", "eval", "mapReduce", "group"]
-        for op in dangerous_ops:
-            if op in value.lower():
-                raise ValueError(f"Dangerous MongoDB operation detected: {op}")
-        return value
-
-    def max_response_length(value: str, metadata: dict) -> str:
-        """Limita la lunghezza massima della response."""
-        max_length = metadata.get("max_length", 5000)
-        if len(value) > max_length:
-            return value[:max_length] + "... [truncated by guardrails]"
-        return value
-
-    # Restituisce come lista
-    return [no_dangerous_mongodb_ops, max_response_length]
+# def setup_custom_validators():
+#     """Ritorna lista di validatori custom per MongoDB/LangChain context."""
+#
+#     def no_dangerous_mongodb_ops(value: str, metadata: dict) -> str:
+#         """Previene operazioni MongoDB pericolose."""
+#         dangerous_ops = ["$where", "eval", "mapReduce", "group"]
+#         for op in dangerous_ops:
+#             if op in value.lower():
+#                 raise ValueError(f"Dangerous MongoDB operation detected: {op}")
+#         return value
+#
+#     def max_response_length(value: str, metadata: dict) -> str:
+#         """Limita la lunghezza massima della response."""
+#         max_length = metadata.get("max_length", 5000)
+#         if len(value) > max_length:
+#             return value[:max_length] + "... [truncated by guardrails]"
+#         return value
+#
+#     # Restituisce come lista
+#     return [no_dangerous_mongodb_ops, max_response_length]
