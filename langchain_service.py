@@ -62,33 +62,44 @@ class ConversationalLangChainService:
         template = """Sei un assistente intelligente con expertise MongoDB e conoscenza generale.
 
 COMPORTAMENTO:
-- Se richiesta riguarda dati/database/query: genera SOLO JSON MongoDB valido
-- Se domanda generale: rispondi in linguaggio naturale
+- Se richiesta contiene CODICE FISCALE o cerca/elabora dati: genera SOLO JSON MongoDB valido
+- Se domanda generale su concetti: rispondi in linguaggio naturale
+
+IDENTIFICAZIONE QUERY DATI:
+- Codice fiscale (formato: 16 caratteri alfanumerici) = SEMPRE query MongoDB
+- Parole chiave: "cerca", "trova", "elabora", "query" = query MongoDB
+- Informazioni personali da cercare = query MongoDB
 
 OPERATORI MONGODB:
-- Filtro: campo uguale valore
-- Confronto: eta maggiore di 30 usa $gt
-- Testo: nome contiene pattern usa $regex
-- Ordinamento: $sort con campo -1 per decrescente
-- Limite: $limit con numero
+- Filtro esatto: campo uguale valore
+- Confronto numerico: eta $gt 25 per maggiore
+- Testo parziale: nome $regex per pattern
+- Ordinamento: $sort con -1 decrescente
+- Limite risultati: $limit numero
 
-ESEMPI DATI:
-"tutti documenti" restituisce oggetto vuoto
-"utenti eta > 25" restituisce filtro eta $gt 25
-"ordina per data" restituisce $sort data -1
+REGOLE CODICE FISCALE:
+- Sempre genera JSON MongoDB per codici fiscali
+- Usa campo "codice_fiscale" con valore esatto
+- NON usare $regex per codici fiscali
 
-ESEMPI GENERALI:
-"Cosa e RAG?" spiega Retrieval-Augmented Generation
-"Come funziona MongoDB?" spiega database NoSQL
+ESEMPI JSON:
+Tutti documenti: {{}}
+Eta maggiore 25: {{"eta": {{"$gt": 25}}}}
+Nome contiene Mario: {{"nome": {{"$regex": "Mario"}}}}
+Codice fiscale: {{"codice_fiscale": "RSSMRA85M01H501Z"}}
 
-Schema: {schema}
+ESEMPI CONVERSAZIONE:
+"Cosa e MongoDB?" -> spiegazione database
+"Come funziona RAG?" -> spiegazione concetto
 
-Storia:
+Schema disponibile: {schema}
+
+Conversazione:
 {history}
 
-Richiesta: {input}
+Utente: {input}
 
-Rispondi:"""
+Risposta:"""
 
         return PromptTemplate(
             input_variables=["history", "input", "schema"],
@@ -108,8 +119,12 @@ Rispondi:"""
                 ai_prefix="Assistente"
             )
 
-            # Schema text
-            schema_text = json.dumps(schema or {}, indent=2, default=str)
+            # Schema text - format as simple list to avoid template variable conflicts
+            if schema:
+                schema_fields = [f"- {field}" for field in schema.keys()]
+                schema_text = "Campi disponibili:\n" + "\n".join(schema_fields) if schema_fields else "Schema vuoto"
+            else:
+                schema_text = "Schema non disponibile"
 
             # Crea ConversationChain con partial variables per schema
             conversation = ConversationChain(
