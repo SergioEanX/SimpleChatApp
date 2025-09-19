@@ -133,7 +133,7 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
             try:
                 logger.info(f"🔄 About to validate with input_guard containing {len(self.input_guard.validators)} validators")
                 for i, validator in enumerate(self.input_guard.validators):
-                    logger.info(f"🔍 Validator {i}: {type(validator).__name__} - {getattr(validator, 'rail_alias', 'no_alias')}")
+                    logger.info(f"🔍 Validator {i}: {validator.id} - on_fail is: {validator.on_fail}")
                 
                 logger.info(f"🎯 Validating query: '{query[:50]}...'")
                 outcome = self.input_guard.validate(query)

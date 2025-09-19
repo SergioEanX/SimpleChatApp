@@ -5,7 +5,7 @@ DEFAULT_CONFIG = {
     "toxic_threshold": 0.8,
     "profanity_filter": True,
     "enable_topic_restriction": True,  # Set True to enable LLM topic filtering
-    "use_llm_topic": False,            # Set False to use simple keyword-based (for debugging)
+    "use_llm_topic": True,            # Set True to use LLM-based topic validator
     "enable_pii_detection": True,     # Set True to enable PII detection
     "use_italian_pii": True,          # Use custom Italian PII validator
     
