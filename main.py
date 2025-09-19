@@ -23,14 +23,8 @@ from models import QueryRequest, QueryResponse
 from database import MongoDBService
 from langchain_service import ConversationalLangChainService
 
-# Guardrails integration
-from guardrails_middleware import GuardrailsMiddleware, create_guardrails_config
-
-from guardrails_middleware import analyzer_engine
-from presidio_analyzer import AnalyzerEngine
-from presidio_analyzer.nlp_engine import NlpEngineProvider
-from presidio_analyzer.recognizer_registry import RecognizerRegistryProvider
-from starlette.datastructures import State
+# New Guards system
+from guards import GuardrailsMiddleware
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -47,10 +41,6 @@ DATABASE_NAME = "your_database"
 COLLECTION_NAME = "your_collection"
 OLLAMA_MODEL = os.getenv("LLM_NAME","gemma3:latest")
 OLLAMA_BASE_URL = "http://localhost:11434"
-
-# Configurazione Guardrails
-GUARDRAILS_CONFIG = create_guardrails_config()
-
 
 # ================================
 # SERVIZI GLOBALI
@@ -132,12 +122,10 @@ app = FastAPI(
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Aggiungi Guardrails middleware
+# Guardrails middleware (new system)
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-app.add_middleware(GuardrailsMiddleware, config=GUARDRAILS_CONFIG)
+app.add_middleware(GuardrailsMiddleware)
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# state = cast(State, app.state)
-# state.analyzer_engine = analyzer_engine
 
 
 
