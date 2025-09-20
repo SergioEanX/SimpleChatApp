@@ -137,8 +137,8 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                 
                 logger.info(f"🎯 Validating query: '{query[:50]}...'")
                 
-                # Run validation and catch specific validator failures
-                outcome = self.input_guard.validate(query)
+                # Run async validation
+                outcome = await self.input_guard.validate(query)
                 logger.info(f"✅ Validation completed successfully")
                 
                 # Check if content was modified (sanitized)

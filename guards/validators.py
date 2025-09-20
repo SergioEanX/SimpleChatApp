@@ -6,8 +6,10 @@ from guards.utils import on_fail_exc, on_fail_filter
 logger = logging.getLogger(__name__)
 
 from guards.utils import OnFailAction
-def create_input_guard(config: dict) -> Guard:
-    """Create input validation guard with PII detection and topic restriction"""
+from guardrails import AsyncGuard
+
+def create_input_guard(config: dict) -> AsyncGuard:
+    """Create async input validation guard with PII detection and topic restriction"""
     try:
         validators = []
         
@@ -21,7 +23,7 @@ def create_input_guard(config: dict) -> Guard:
                     logger.info("✅ Italian PII detection enabled (fiscal codes, IBAN, etc.)")
                 else:
                     # Fallback to default DetectPII (EN only)
-                    pii_validator = DetectPII(on_fail=on_fail_exc)
+                    pii_validator = DetectPII(on_fail="exception")
                     logger.info("✅ PII detection enabled (default entities)")
                 
                 validators.append(pii_validator)
@@ -32,7 +34,7 @@ def create_input_guard(config: dict) -> Guard:
         if config.get("enable_topic_restriction", False) and config.get("use_llm_topic", False):
             try:
                 from .custom import LLMTopicValidator
-                topic_validator = LLMTopicValidator(on_fail=on_fail_exc)
+                topic_validator = LLMTopicValidator(on_fail="exception")
                 validators.append(topic_validator)
                 logger.info("✅ LLM Topic restriction enabled")
             except Exception as e:
@@ -40,19 +42,19 @@ def create_input_guard(config: dict) -> Guard:
         
         # Add toxic language detection
         validators.append(
-            ToxicLanguage(threshold=config.get("toxic_threshold", 0.8), on_fail=on_fail_exc)
+            ToxicLanguage(threshold=config.get("toxic_threshold", 0.8), on_fail="exception")
         )
         
         # Add profanity filter
         validators.append(
-            ProfanityFree(on_fail=on_fail_filter)
+            ProfanityFree(on_fail="filter")
         )
         
-        return Guard().use_many(*validators)
+        return AsyncGuard().use_many(*validators)
         
     except Exception as e:
-        logger.warning(f"Input guard creation failed: {e}")
-        return Guard().use(ProfanityFree(on_fail=on_fail_filter))
+        logger.warning(f"Async input guard creation failed: {e}")
+        return AsyncGuard().use(ProfanityFree(on_fail="filter"))
 
 def create_output_guard(config: dict) -> Guard:
     """Create output validation guard"""
