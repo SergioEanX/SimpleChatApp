@@ -1,4 +1,5 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, cast, Callable
+from guardrails import OnFailAction
 
 def extract_query_from_request(data: dict) -> Optional[str]:
     """Extract user query from request data"""
@@ -28,3 +29,7 @@ def should_validate_input(path: str, endpoints: Dict[str, Any]) -> bool:
         if path == endpoint or path.startswith(endpoint.split('{')[0]):
             return config.get("input", False)
     return False
+
+
+on_fail_exc = cast(Callable[..., Any], OnFailAction.EXCEPTION)
+on_fail_filter = cast(Callable[..., Any], OnFailAction.FILTER)

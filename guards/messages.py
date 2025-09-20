@@ -3,15 +3,15 @@ def get_violation_message(error_msg: str, config: dict) -> str:
     error_lower = error_msg.lower()
     messages = config.get("custom_messages", {})
     
-    # Check for PII violations first (more specific)
-    if "pii" in error_lower or "personal" in error_lower or "detected" in error_lower:
-        return messages.get("pii", "Dati personali rilevati.")
+    # Check for specific validator messages (in order of priority)
+    if "dati personali sensibili" in error_msg or "informazioni personali identificabili" in error_msg:
+        return messages.get("pii", "Ho rilevato dati personali sensibili nella tua richiesta (nomi, email, codici fiscali, ecc.). Per motivi di sicurezza e privacy, non posso elaborare informazioni personali identificabili.")
+    elif "sistema ai per analytics" in error_lower or "non posso fornire" in error_lower:
+        return messages.get("topic", "Sono un sistema AI per database analytics. Non posso fornire consigli personali.")
     elif "toxic" in error_lower:
-        return messages.get("toxic", "Contenuto inappropriato rilevato.")
+        return messages.get("toxic", "Non posso elaborare contenuti inappropriati. Ti prego di riformulare.")
     elif "profanity" in error_lower:
-        return messages.get("profanity", "Linguaggio inappropriato filtrato.")
-    elif "topic" in error_lower:
-        return messages.get("topic", "Topic non consentito.")
+        return messages.get("profanity", "Linguaggio inappropriato rimosso dalla richiesta.")
     else:
         return "Validazione fallita. Riprova con contenuto diverso."
 

@@ -1,14 +1,11 @@
 import logging
 from guardrails import Guard
 from guardrails.hub import ToxicLanguage, ProfanityFree, DetectPII
-from guardrails import OnFailAction
-from typing import cast, Callable, Any
+from guards.utils import on_fail_exc, on_fail_filter
 
 logger = logging.getLogger(__name__)
 
-on_fail_exc = cast(Callable[..., Any], OnFailAction.EXCEPTION)
-on_fail_filter = cast(Callable[..., Any], OnFailAction.FILTER)
-
+from guards.utils import OnFailAction
 def create_input_guard(config: dict) -> Guard:
     """Create input validation guard with PII detection and topic restriction"""
     try:

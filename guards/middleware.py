@@ -136,6 +136,8 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
                     logger.info(f"🔍 Validator {i}: {validator.id} - on_fail is: {validator.on_fail}")
                 
                 logger.info(f"🎯 Validating query: '{query[:50]}...'")
+                
+                # Run validation and catch specific validator failures
                 outcome = self.input_guard.validate(query)
                 logger.info(f"✅ Validation completed successfully")
                 
@@ -159,12 +161,31 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
 
             except Exception as e:
                 # Validation failed - create violation response
+                logger.error(f"🚫 VALIDATION FAILED - Exception type: {type(e).__name__}")
+                logger.error(f"🚫 VALIDATION FAILED - Exception message: {str(e)}")
+                logger.error(f"🚫 VALIDATION FAILED - Full exception: {repr(e)}")
+                
+                # Try to determine which validator failed
+                error_message = str(e)
+                if "dati personali sensibili" in error_message:
+                    logger.error("🚫 FAILED VALIDATOR: ItalianPIIValidator")
+                    violation_type = "pii_violation"
+                elif "sistema AI per analytics" in error_message:
+                    logger.error("🚫 FAILED VALIDATOR: LLMTopicValidator")
+                    violation_type = "topic_violation"
+                elif "toxic" in error_message.lower():
+                    logger.error("🚫 FAILED VALIDATOR: ToxicLanguage")
+                    violation_type = "toxic_violation"
+                else:
+                    logger.error("🚫 FAILED VALIDATOR: Unknown")
+                    violation_type = "content_violation"
+                
                 message = get_violation_message(str(e), self.config)
                 logger.warning(f"Input validation failed: {e}")
                 
                 return None, JSONResponse(
                     status_code=400,
-                    content=create_response_body(message, "content_violation")
+                    content=create_response_body(message, violation_type)
                 )
 
         except Exception as e:

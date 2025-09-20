@@ -8,8 +8,7 @@ import logging
 from typing import List, Optional
 from guardrails import register_validator
 from guardrails.validator_base import Validator, FailResult, PassResult
-# Remove ValidationError import - using FailResult instead
-# from guardrails.errors import ValidationError
+from guards.utils import on_fail_exc, on_fail_filter
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,8 @@ logger = logging.getLogger(__name__)
 class ItalianPIIValidator(Validator):
     """Custom PII validator with Italian support using regex patterns"""
     
-    def __init__(self, on_fail: str = "exception"):
+
+    def __init__(self, on_fail=on_fail_exc):
         super().__init__(on_fail=on_fail)
         
         # Italian fiscal code pattern

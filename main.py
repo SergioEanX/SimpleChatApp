@@ -11,7 +11,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends
 from datetime import datetime
-from typing import Dict, Any, TYPE_CHECKING
+from typing import Dict, Any, TYPE_CHECKING, Union
 import uuid
 import logging
 from starlette.datastructures import State
@@ -46,8 +46,8 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 # SERVIZI GLOBALI
 # ================================
 
-mongodb_service: MongoDBService = None
-conversational_service: ConversationalLangChainService = None
+mongodb_service: Union[MongoDBService,None] = None
+conversational_service: Union[ConversationalLangChainService,None] = None
 
 
 # ================================
