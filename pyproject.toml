@@ -17,5 +17,6 @@ dependencies = [
     "pymongo>=4.15.1",
     "python-dotenv>=1.1.1",
     "spacy>=3.8.7",
+    "textual>=6.1.0",
     "uvicorn>=0.35.0",
 ]
