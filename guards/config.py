@@ -25,6 +25,7 @@ DEFAULT_CONFIG = {
 # Protected endpoints configuration
 PROTECTED_ENDPOINTS = {
     "/query": {"input": True, "output": True},
+    "/chat": {"input": True, "output": True},  # AGGIUNTO: Protegge streaming endpoint
     "/conversation": {"input": False, "output": True},
     "/conversation/{thread_id}/history": {"input": False, "output": True}
 }

@@ -66,7 +66,7 @@ async def streaming_chat(request: StreamingChatRequest = Depends(log_request_inf
 
 async def stream_chat_response(thread_id: str, user_query: str, collection: str = None) -> AsyncGenerator[str, None]:
     """
-    Generator function for streaming chat response
+    Generator function per streaming chat response - VERSIONE REALE CON LANGCHAIN
     
     Args:
         thread_id: Session identifier
@@ -84,80 +84,131 @@ async def stream_chat_response(thread_id: str, user_query: str, collection: str 
         collection = collection or main.COLLECTION_NAME
         
         # Yield initial connection event
-        yield f"""data: {json.dumps({
+        yield f'''data: {json.dumps({
             'type': 'connection',
             'thread_id': thread_id,
             'timestamp': datetime.now().isoformat(),
             'message': 'Connessione streaming stabilita'
-        })}\n\n"""
-        
-        # TODO: Qui andrà l'integrazione con langchain_service streaming
-        # Per ora, simuliamo una risposta di test
+        })}\n\n'''
         
         # Yield start event
-        yield f"""data: {json.dumps({
+        yield f'''data: {json.dumps({
             'type': 'start',
             'thread_id': thread_id,
             'message': 'Elaborazione richiesta iniziata...'
-        })}\n\n"""
+        })}\n\n'''
         
-        # Simulate streaming chunks (placeholder)
-        test_chunks = [
-            "Sto ",
-            "elaborando ",
-            "la tua ",
-            "richiesta ",
-            "per ",
-            "il thread ",
-            f"{thread_id}. ",
-            "Questa è ",
-            "una risposta ",
-            "di test ",
-            "per verificare ",
-            "il funzionamento ",
-            "dello streaming."
-        ]
-        
-        accumulated_content = ""
-        
-        for i, chunk in enumerate(test_chunks):
-            accumulated_content += chunk
+        # **REAL STREAMING**: Usa LangChain streaming service
+        try:
+            # Import del nuovo servizio streaming
+            from langchain_service_stream import StreamingService
             
-            # Yield content chunk
-            yield f"""data: {json.dumps({
-                'type': 'content',
+            # Crea istanza streaming service
+            streaming_service = StreamingService(
+                model_name=main.OLLAMA_MODEL,
+                base_url=main.OLLAMA_BASE_URL
+            )
+            
+            # Recupera schema collezione per contesto LLM
+            schema = await main.mongodb_service.get_collection_schema(collection)
+            logger.info(f"📋 Schema caricato per streaming: {len(schema)} campi")
+            
+            accumulated_content = ""
+            chunk_count = 0
+            
+            # **STREAMING REALE** via StreamingService - USA METODO ALTERNATIVO
+            async for chunk in streaming_service.stream_mongodb_query_alternative(
+                thread_id=thread_id,
+                user_input=user_query,
+                collection_schema=schema
+            ):
+                chunk_count += 1
+                accumulated_content += chunk
+                
+                # Yield content chunk
+                yield f'''data: {json.dumps({
+                    'type': 'content',
+                    'thread_id': thread_id,
+                    'chunk': chunk,
+                    'chunk_index': chunk_count,
+                    'accumulated_length': len(accumulated_content)
+                })}\n\n'''
+            
+            logger.info(f"✅ Streaming LangChain completato: {chunk_count} chunks")
+            
+            # Yield completion event
+            yield f'''data: {json.dumps({
+                'type': 'complete',
                 'thread_id': thread_id,
-                'chunk': chunk,
-                'chunk_index': i,
-                'accumulated_length': len(accumulated_content)
-            })}\n\n"""
+                'final_content': accumulated_content,
+                'total_chunks': chunk_count,
+                'timestamp': datetime.now().isoformat()
+            })}\n\n'''
             
-            # Small delay per simulare real streaming
-            import asyncio
-            await asyncio.sleep(0.1)
-        
-        # Yield completion event
-        yield f"""data: {json.dumps({
-            'type': 'complete',
-            'thread_id': thread_id,
-            'final_content': accumulated_content,
-            'total_chunks': len(test_chunks),
-            'timestamp': datetime.now().isoformat()
-        })}\n\n"""
+        except ImportError as import_error:
+            logger.error(f"❌ Impossibile importare StreamingService: {import_error}")
+            
+            # **FALLBACK**: Usa mock streaming se servizio non disponibile
+            yield f'''data: {json.dumps({
+                'type': 'error',
+                'thread_id': thread_id,
+                'error': 'Streaming service non disponibile - usando fallback',
+                'timestamp': datetime.now().isoformat()
+            })}\n\n'''
+            
+            # Fallback con servizio normale
+            try:
+                schema = await main.mongodb_service.get_collection_schema(collection)
+                result = await main.conversational_service.generate_mongodb_query(
+                    thread_id=thread_id,
+                    user_input=user_query,
+                    collection_schema=schema
+                )
+                
+                fallback_content = str(result) if result else "Nessun risultato disponibile"
+                
+                yield f'''data: {json.dumps({
+                    'type': 'complete',
+                    'thread_id': thread_id,
+                    'final_content': fallback_content,
+                    'total_chunks': 1,
+                    'fallback_used': True,
+                    'timestamp': datetime.now().isoformat()
+                })}\n\n'''
+                
+            except Exception as fallback_error:
+                logger.error(f"❌ Anche fallback fallito: {fallback_error}")
+                yield f'''data: {json.dumps({
+                    'type': 'error',
+                    'thread_id': thread_id,
+                    'error': f'Errore servizio: {str(fallback_error)}',
+                    'timestamp': datetime.now().isoformat()
+                })}\n\n'''
+            
+        except Exception as streaming_error:
+            logger.error(f"❌ Errore durante streaming: {streaming_error}")
+            
+            # Yield error event
+            yield f'''data: {json.dumps({
+                'type': 'error',
+                'thread_id': thread_id,
+                'error': str(streaming_error),
+                'timestamp': datetime.now().isoformat()
+            })}\n\n'''
         
         # Yield final done event
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        yield f'''data: {json.dumps({'type': 'done'})}\n\n'''
         
     except Exception as e:
-        # Yield error event
-        yield f"""data: {json.dumps({
+        # Yield error event per errori globali
+        yield f'''data: {json.dumps({
             'type': 'error',
             'thread_id': thread_id,
             'error': str(e),
             'timestamp': datetime.now().isoformat()
-        })}\n\n"""
+        })}\n\n'''
         
-        logger.error(f"Errore durante streaming: {e}")
+        logger.error(f"Errore globale durante streaming: {e}")
 
 
 @router.post("/query", response_model=QueryResponse)

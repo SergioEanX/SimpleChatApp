@@ -91,7 +91,15 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
 
     def _is_protected_endpoint(self, path: str) -> bool:
         """Check if endpoint is protected (improved path matching)"""
-        for endpoint in self.endpoints:
+        # Lista diretta degli endpoint protetti per evitare problemi di import
+        protected_endpoints = [
+            "/query",
+            "/chat",  # AGGIUNTO: Protegge streaming endpoint
+            "/conversation",
+            "/conversation/{thread_id}/history"
+        ]
+        
+        for endpoint in protected_endpoints:
             if path == endpoint:
                 return True
             # Handle parameterized paths like /conversation/{thread_id}/history
@@ -192,8 +200,12 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
             logger.error(f"Input validation error: {e}")
             return None, None  # Graceful fallback
 
-    async def _validate_output(self, response: Response) -> Optional[Response]:
-        """Validate and potentially modify output response"""
+    # ================================
+    # VERSIONED OUTPUT VALIDATION METHODS
+    # ================================
+
+    async def _validate_output_original(self, response: Response) -> Optional[Response]:
+        """VERSIONE ORIGINALE - Validate and potentially modify output response"""
         
         try:
             # Handle different response types
@@ -244,6 +256,21 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
             logger.error(f"Output validation error: {e}")
             return None  # Graceful fallback
 
+    async def _validate_output_new(self, response: Response) -> Optional[Response]:
+        """NUOVA VERSIONE CON STREAMING SUPPORT - Validate output with StreamingResponse handling"""
+        
+        # **NUOVO**: Se è StreamingResponse, usa validation diversa
+        if isinstance(response, StreamingResponse):
+            logger.info("🔄 Detected StreamingResponse - applying streaming validation")
+            return await self._validate_streaming_output(response)
+        
+        # Per response normali, usa logica originale
+        return await self._validate_output_original(response)
+
+    # SWITCH: Cambia qui per abilitare/disabilitare streaming validation
+    _validate_output = _validate_output_new  # ATTIVA: Nuova versione con streaming
+    # _validate_output = _validate_output_original  # ROLLBACK: Versione originale
+
     async def _extract_response_body(self, response: Response) -> Optional[bytes]:
         """Extract body from different response types"""
         
@@ -266,3 +293,104 @@ class GuardrailsMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             logger.error(f"Failed to extract response body: {e}")
             return None
+
+    # ================================
+    # NUOVI METODI STREAMING VALIDATION
+    # ================================
+
+    async def _validate_streaming_output(self, response: StreamingResponse) -> Optional[StreamingResponse]:
+        """
+        NUOVO: Valida output di StreamingResponse accumulando contenuto
+        """
+        try:
+            logger.info("🔄 Starting streaming response validation...")
+            
+            # Wrapper del generator originale per accumulare contenuto
+            async def validated_stream_wrapper():
+                accumulated_content = ""
+                
+                try:
+                    # Itera sui chunks del stream originale
+                    async for chunk in response.body_iterator:
+                        # Decode chunk
+                        if isinstance(chunk, bytes):
+                            chunk_str = chunk.decode('utf-8')
+                        else:
+                            chunk_str = str(chunk)
+                        
+                        # Accumula per validation finale
+                        accumulated_content += chunk_str
+                        
+                        # Forward chunk al client (passa sempre)
+                        yield chunk
+                    
+                    # **VALIDATION FINALE** su contenuto accumulato
+                    logger.info(f"🔍 Validating accumulated streaming content: {len(accumulated_content)} chars")
+                    
+                    # Estrai solo il contenuto testuale dai SSE events
+                    final_text_content = self._extract_content_from_sse_stream(accumulated_content)
+                    
+                    if final_text_content and len(final_text_content) > 20:
+                        try:
+                            # Valida contenuto finale con output_guard
+                            outcome = await self.output_guard.validate(final_text_content)
+                            logger.info("✅ Streaming output validation completed successfully")
+                            
+                            # Se il contenuto era problematico, logga warning (ma non bloccare stream già inviato)
+                            if outcome.validated_output != final_text_content:
+                                logger.warning(f"⚠️ Streaming output had content violations - logged for review")
+                                
+                        except Exception as validation_error:
+                            logger.warning(f"⚠️ Streaming output validation failed: {validation_error}")
+                            # Non blocchiamo - stream già inviato
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error in streaming validation wrapper: {e}")
+                    # Yield error event se possibile
+                    error_event = f'data: {{"type": "error", "error": "Validation error during streaming"}}\n\n'
+                    yield error_event.encode('utf-8')
+            
+            # Crea nuovo StreamingResponse con wrapper
+            return StreamingResponse(
+                validated_stream_wrapper(),
+                media_type=response.media_type,
+                headers=dict(response.headers),
+                status_code=response.status_code
+            )
+            
+        except Exception as e:
+            logger.error(f"Streaming validation error: {e}")
+            return None  # Graceful fallback
+
+    def _extract_content_from_sse_stream(self, sse_content: str) -> str:
+        """
+        NUOVO: Estrae contenuto testuale da stream SSE per validation
+        """
+        import json
+        
+        extracted_text = ""
+        
+        try:
+            # Parse linee SSE
+            for line in sse_content.split('\n'):
+                if line.startswith('data: '):
+                    try:
+                        event_data = json.loads(line[6:])  # Rimuovi "data: "
+                        
+                        # Accumula contenuto finale o chunks
+                        if event_data.get("type") == "complete":
+                            final_content = event_data.get("final_content", "")
+                            if final_content:
+                                extracted_text += final_content
+                                break  # Usa solo contenuto finale se disponibile
+                        elif event_data.get("type") == "content":
+                            chunk = event_data.get("chunk", "")
+                            extracted_text += chunk
+                            
+                    except json.JSONDecodeError:
+                        continue  # Skip linee malformate
+                        
+        except Exception as e:
+            logger.warning(f"Failed to extract content from SSE stream: {e}")
+        
+        return extracted_text
