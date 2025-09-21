@@ -3,12 +3,14 @@ routes.py - Endpoint definitions separated from main app for readability.
 This module defines an APIRouter with all API endpoints originally in main.py.
 """
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, AsyncGenerator
 import uuid
 import logging
+import json
 
-from models import QueryRequest, QueryResponse
+from models import QueryRequest, QueryResponse, StreamingChatRequest
 
 # Logger setup consistent with main
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +29,136 @@ async def log_request_info(request_data: QueryRequest):
 # ================================
 # ENDPOINTS PROTETTI DA GUARDRAILS
 # ================================
+
+@router.post("/chat")
+async def streaming_chat(request: StreamingChatRequest = Depends(log_request_info)):
+    """
+    Streaming chat endpoint - Real-time response chunks
+    
+    🛡️ Protetto da AsyncGuard:
+    - Input: Controllo PII, Topic, Toxic, Profanity (pre-stream)
+    - Output: Validazione contenuto accumulato (post-stream)
+    """
+    try:
+        # Thread ID management
+        thread_id = request.session_id or f"thread_{uuid.uuid4().hex[:8]}"
+        
+        logger.info(f"🔄 Streaming chat - Thread: {thread_id}")
+        logger.info(f"📝 User input: {request.query}")
+        
+        # Return streaming response
+        return StreamingResponse(
+            stream_chat_response(thread_id, request.query, request.collection),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "X-Thread-ID": thread_id
+            }
+        )
+        
+    except Exception as e:
+        error_msg = f"Errore durante streaming chat: {str(e)}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+async def stream_chat_response(thread_id: str, user_query: str, collection: str = None) -> AsyncGenerator[str, None]:
+    """
+    Generator function for streaming chat response
+    
+    Args:
+        thread_id: Session identifier
+        user_query: User's input query
+        collection: MongoDB collection name
+        
+    Yields:
+        Server-Sent Events formatted strings
+    """
+    try:
+        # Import main per accesso ai servizi
+        import main  # type: ignore
+        
+        # Setup iniziale
+        collection = collection or main.COLLECTION_NAME
+        
+        # Yield initial connection event
+        yield f"""data: {json.dumps({
+            'type': 'connection',
+            'thread_id': thread_id,
+            'timestamp': datetime.now().isoformat(),
+            'message': 'Connessione streaming stabilita'
+        })}\n\n"""
+        
+        # TODO: Qui andrà l'integrazione con langchain_service streaming
+        # Per ora, simuliamo una risposta di test
+        
+        # Yield start event
+        yield f"""data: {json.dumps({
+            'type': 'start',
+            'thread_id': thread_id,
+            'message': 'Elaborazione richiesta iniziata...'
+        })}\n\n"""
+        
+        # Simulate streaming chunks (placeholder)
+        test_chunks = [
+            "Sto ",
+            "elaborando ",
+            "la tua ",
+            "richiesta ",
+            "per ",
+            "il thread ",
+            f"{thread_id}. ",
+            "Questa è ",
+            "una risposta ",
+            "di test ",
+            "per verificare ",
+            "il funzionamento ",
+            "dello streaming."
+        ]
+        
+        accumulated_content = ""
+        
+        for i, chunk in enumerate(test_chunks):
+            accumulated_content += chunk
+            
+            # Yield content chunk
+            yield f"""data: {json.dumps({
+                'type': 'content',
+                'thread_id': thread_id,
+                'chunk': chunk,
+                'chunk_index': i,
+                'accumulated_length': len(accumulated_content)
+            })}\n\n"""
+            
+            # Small delay per simulare real streaming
+            import asyncio
+            await asyncio.sleep(0.1)
+        
+        # Yield completion event
+        yield f"""data: {json.dumps({
+            'type': 'complete',
+            'thread_id': thread_id,
+            'final_content': accumulated_content,
+            'total_chunks': len(test_chunks),
+            'timestamp': datetime.now().isoformat()
+        })}\n\n"""
+        
+        # Yield final done event
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        
+    except Exception as e:
+        # Yield error event
+        yield f"""data: {json.dumps({
+            'type': 'error',
+            'thread_id': thread_id,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        })}\n\n"""
+        
+        logger.error(f"Errore durante streaming: {e}")
+
 
 @router.post("/query", response_model=QueryResponse)
 async def conversational_query(request: QueryRequest = Depends(log_request_info)):
