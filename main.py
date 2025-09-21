@@ -19,7 +19,7 @@ from typing import cast
 from dotenv import load_dotenv
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from models import QueryRequest, QueryResponse
+from models import QueryRequest, QueryResponse, StreamingChatRequest
 from database import MongoDBService
 from langchain_service import ConversationalLangChainService
 
@@ -60,8 +60,8 @@ async def lifespan(app: FastAPI):
     Gestisce ciclo di vita applicazione con Guardrails
     """
     # ===== STARTUP =====
-    print("🚀 MongoDB Analytics API v2.2 - Con Guardrails")
-    print("🛡️ Protezione: Input/Output validation attiva")
+    print("🚀 MongoDB Analytics API v2.3 - Con AsyncGuard Streaming")
+    print("🛡️ Protezione: AsyncGuard input/output validation attiva")
 
     global mongodb_service, conversational_service
 
@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
         else:
             raise Exception("Ollama LLM non disponibile")
 
-        print("🛡️ Guardrails middleware attivo")
+        print("🛡️ AsyncGuard middleware attivo")
         print("🎉 API disponibile: http://localhost:8000")
 
     except Exception as e:
@@ -113,9 +113,9 @@ async def lifespan(app: FastAPI):
 # FASTAPI APP con GUARDRAILS
 # ================================
 app = FastAPI(
-    title="MongoDB Analytics API con Guardrails",
-    description="Analytics con ConversationBufferMemory e protezione Guardrails",
-    version="2.2.0",
+    title="MongoDB Analytics API con AsyncGuard",
+    description="Analytics con ConversationBufferMemory e protezione AsyncGuard streaming",
+    version="2.3.0",
     lifespan=lifespan
 )
 
@@ -141,8 +141,8 @@ app.include_router(api_router)
 if __name__ == "__main__":
     import uvicorn
     try:
-        print("🚀 Avvio MongoDB Analytics API con Guardrails")
-        print("🛡️ Protezione input/output attiva")
+        print("🚀 Avvio MongoDB Analytics API con AsyncGuard")
+        print("🛡️ Protezione async input/output attiva")
         # uvicorn gestisce SIGINT/SIGTERM ed esegue correttamente il ciclo di vita FastAPI
         uvicorn.run(
             "main:app",
