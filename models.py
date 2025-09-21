@@ -11,6 +11,84 @@ from typing import Optional, Dict, Literal, Union
 from datetime import datetime
 
 
+class StreamingChatRequest(BaseModel):
+    """
+    Richiesta per streaming chat endpoint.
+    """
+    query: str = Field(
+        ...,
+        description="Richiesta in linguaggio naturale per chat streaming",
+        examples=["Trova tutti i documenti con età maggiore di 25"]
+    )
+    session_id: Optional[str] = Field(
+        None,
+        description="Thread ID per memoria conversazione (auto-generato se mancante)",
+        examples=["thread_abc12345"]
+    )
+    collection: Optional[str] = Field(
+        None,
+        description="Nome collezione MongoDB (usa default se mancante)",
+        examples=["users"]
+    )
+
+
+class StreamingChatEvent(BaseModel):
+    """
+    Singolo evento nel flusso streaming.
+    """
+    type: Literal["connection", "start", "content", "complete", "error", "done"] = Field(
+        ...,
+        description="Tipo evento streaming",
+        examples=["content", "complete", "error"]
+    )
+    thread_id: Optional[str] = Field(
+        None,
+        description="Thread ID della conversazione",
+        examples=["thread_abc12345"]
+    )
+    chunk: Optional[str] = Field(
+        None,
+        description="Chunk di contenuto (per type='content')",
+        examples=["Sto elaborando ", "la tua richiesta..."]
+    )
+    chunk_index: Optional[int] = Field(
+        None,
+        description="Indice del chunk (per type='content')",
+        examples=[0, 1, 2]
+    )
+    accumulated_length: Optional[int] = Field(
+        None,
+        description="Lunghezza totale contenuto accumulato",
+        examples=[10, 25, 50]
+    )
+    final_content: Optional[str] = Field(
+        None,
+        description="Contenuto finale completo (per type='complete')",
+        examples=["Risposta completa generata dall'AI"]
+    )
+    total_chunks: Optional[int] = Field(
+        None,
+        description="Numero totale chunks processati (per type='complete')",
+        examples=[15, 42]
+    )
+    message: Optional[str] = Field(
+        None,
+        description="Messaggio informativo",
+        examples=["Connessione stabilita", "Elaborazione iniziata"]
+    )
+    error: Optional[str] = Field(
+        None,
+        description="Messaggio di errore (per type='error')",
+        examples=["Timeout durante elaborazione", "Errore connessione LLM"]
+    )
+    timestamp: Optional[str] = Field(
+        None,
+        description="Timestamp evento (ISO format)",
+        examples=["2025-01-20T10:30:00Z"]
+    )
+
+
+
 class QueryRequest(BaseModel):
     """
     Richiesta per eseguire query MongoDB in linguaggio naturale.
