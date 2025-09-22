@@ -27,6 +27,68 @@ async def log_request_info(request_data: QueryRequest):
 
 
 # ================================
+# GESTIONE SESSIONI
+# ================================
+
+@router.post("/session/new")
+async def create_new_session():
+    """Crea una nuova sessione conversazionale"""
+    try:
+        # Genera nuovo session_id
+        session_id = f"session_{uuid.uuid4().hex[:8]}"
+        
+        return {
+            "session_id": session_id,
+            "status": "created",
+            "message": "Nuova sessione creata. Usa questo session_id nelle tue richieste.",
+            "usage": {
+                "query": f"POST /query con session_id: {session_id}",
+                "chat": f"POST /chat con session_id: {session_id}"
+            },
+            "created_at": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore creazione sessione: {str(e)}")
+
+
+@router.get("/session/{session_id}/info")
+async def get_session_info(session_id: str):
+    """Ottieni informazioni su una sessione specifica"""
+    try:
+        import main  # type: ignore
+        
+        # Verifica se la sessione esiste
+        active_threads = await main.conversational_service.list_active_threads()
+        
+        if session_id not in active_threads:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Sessione {session_id} non trovata o non attiva"
+            )
+        
+        # Recupera storia conversazione
+        history = await main.conversational_service.get_conversation_history(session_id)
+        
+        return {
+            "session_id": session_id,
+            "status": "active",
+            "total_messages": len(history),
+            "last_activity": datetime.now().isoformat(),
+            "memory_type": "ConversationBufferMemory",
+            "endpoints": {
+                "query": "/query",
+                "chat": "/chat (streaming)",
+                "history": f"/conversation/{session_id}/history",
+                "clear": f"/conversation/{session_id} (DELETE)"
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore info sessione: {str(e)}")
+
+
+# ================================
 # ENDPOINTS PROTETTI DA GUARDRAILS
 # ================================
 
@@ -40,8 +102,15 @@ async def streaming_chat(request: StreamingChatRequest = Depends(log_request_inf
     - Output: Validazione contenuto accumulato (post-stream)
     """
     try:
-        # Thread ID management
-        thread_id = request.session_id or f"thread_{uuid.uuid4().hex[:8]}"
+        # **GESTIONE SESSIONI INTELLIGENTE**
+        # Se session_id è fornito: usa quello (client-managed)
+        # Se session_id è vuoto: genera nuovo thread (auto-managed)
+        if request.session_id:
+            thread_id = request.session_id
+            logger.info(f"🔗 Usando session_id fornito: {thread_id}")
+        else:
+            thread_id = f"thread_{uuid.uuid4().hex[:8]}"
+            logger.info(f"🆕 Generato nuovo thread_id: {thread_id}")
         
         logger.info(f"🔄 Streaming chat - Thread: {thread_id}")
         logger.info(f"📝 User input: {request.query}")
@@ -98,16 +167,12 @@ async def stream_chat_response(thread_id: str, user_query: str, collection: str 
             'message': 'Elaborazione richiesta iniziata...'
         })}\n\n'''
         
-        # **REAL STREAMING**: Usa LangChain streaming service
+        # **REAL STREAMING**: Usa servizio streaming globale condiviso
         try:
-            # Import del nuovo servizio streaming
-            from langchain_service_stream import StreamingService
-            
-            # Crea istanza streaming service
-            streaming_service = StreamingService(
-                model_name=main.OLLAMA_MODEL,
-                base_url=main.OLLAMA_BASE_URL
-            )
+            # Usa streaming service globale invece di crearne uno nuovo
+            if not main.streaming_service:
+                # Fallback se servizio non disponibile
+                raise ImportError("StreamingService globale non disponibile")
             
             # Recupera schema collezione per contesto LLM
             schema = await main.mongodb_service.get_collection_schema(collection)
@@ -116,8 +181,8 @@ async def stream_chat_response(thread_id: str, user_query: str, collection: str 
             accumulated_content = ""
             chunk_count = 0
             
-            # **STREAMING REALE** via StreamingService - USA METODO ALTERNATIVO
-            async for chunk in streaming_service.stream_mongodb_query_alternative(
+            # **STREAMING REALE** via StreamingService globale (memoria condivisa)
+            async for chunk in main.streaming_service.stream_mongodb_query_alternative(
                 thread_id=thread_id,
                 user_input=user_query,
                 collection_schema=schema
@@ -224,12 +289,23 @@ async def conversational_query(request: QueryRequest = Depends(log_request_info)
         # Local import to avoid circular dependency and access globals defined in main
         import main  # type: ignore
 
-        # Thread ID management
-        thread_id = request.session_id or f"thread_{uuid.uuid4().hex[:8]}"
+        # **GESTIONE SESSIONI INTELLIGENTE**
+        # Se session_id è fornito: usa quello (client-managed)
+        # Se session_id è vuoto: genera nuovo thread (auto-managed)
+        if request.session_id:
+            thread_id = request.session_id
+            logger.info(f"🔗 Usando session_id fornito: {thread_id}")
+        else:
+            thread_id = f"thread_{uuid.uuid4().hex[:8]}"
+            logger.info(f"🆕 Generato nuovo thread_id: {thread_id}")
+            
         collection = request.collection or main.COLLECTION_NAME
 
         logger.info(f"🔍 Query conversazionale - Thread: {thread_id}")
         logger.info(f"📝 User input: {request.query}")
+        
+        # **RIMOZIONE DEMO HACK**
+        # Non più necessario il thread fisso
 
         # 1. Recupera schema collezione per contesto LLM
         schema = await main.mongodb_service.get_collection_schema(collection)
